@@ -1,0 +1,149 @@
+package com.example.quizzmaster.util
+
+import com.example.quizzmaster.model.Question
+import com.example.quizzmaster.service.QuizzService
+
+/**
+ * Utility class for translating quiz content from English to French.
+ */
+object TranslationUtil {
+
+    /**
+     * Translates a Question object from English to French.
+     * 
+     * @param question The question to translate
+     * @return A new Question object with translated content
+     */
+    fun translateQuestion(question: Question): Question {
+        return Question(
+            category = translateCategory(question.category),
+            type = question.type,
+            difficulty = translateDifficulty(question.difficulty),
+            question = translateText(question.question),
+            correctAnswer = translateText(question.correctAnswer),
+            incorrectAnswers = question.incorrectAnswers.map { translateText(it) }
+        )
+    }
+
+    /**
+     * Translates a list of Question objects from English to French.
+     * 
+     * @param questions The list of questions to translate
+     * @return A new list of Question objects with translated content
+     */
+    fun translateQuestions(questions: List<Question>): List<Question> {
+        return questions.map { translateQuestion(it) }
+    }
+
+    /**
+     * Translates category names from English to French.
+     */
+    fun translateCategory(category: String): String {
+        return when (category) {
+            "General Knowledge" -> "Culture Générale"
+            "Entertainment: Books" -> "Divertissement: Livres"
+            "Entertainment: Film" -> "Divertissement: Films"
+            "Entertainment: Music" -> "Divertissement: Musique"
+            "Entertainment: Television" -> "Divertissement: Télévision"
+            "Entertainment: Video Games" -> "Divertissement: Jeux Vidéo"
+            "Science & Nature" -> "Science & Nature"
+            "Science: Computers" -> "Science: Informatique"
+            "Science: Mathematics" -> "Science: Mathématiques"
+            "Sports" -> "Sports"
+            "Geography" -> "Géographie"
+            "History" -> "Histoire"
+            "Politics" -> "Politique"
+            "Art" -> "Art"
+            "Celebrities" -> "Célébrités"
+            "Animals" -> "Animaux"
+            else -> category
+        }
+    }
+
+    /**
+     * Translates difficulty levels from English to French.
+     */
+    fun translateDifficulty(difficulty: String): String {
+        return when (difficulty.lowercase()) {
+            "easy" -> "facile"
+            "medium" -> "moyen"
+            "hard" -> "difficile"
+            else -> difficulty
+        }
+    }
+
+    /**
+     * Gets the category name in French based on category ID.
+     */
+    fun getCategoryNameFromId(categoryId: Int): String {
+        return when (categoryId) {
+            QuizzService.CATEGORY_GENERAL_KNOWLEDGE -> "Culture Générale"
+            QuizzService.CATEGORY_BOOKS -> "Livres"
+            QuizzService.CATEGORY_FILM -> "Films"
+            QuizzService.CATEGORY_MUSIC -> "Musique"
+            QuizzService.CATEGORY_TELEVISION -> "Télévision"
+            QuizzService.CATEGORY_VIDEO_GAMES -> "Jeux Vidéo"
+            QuizzService.CATEGORY_SCIENCE_NATURE -> "Science & Nature"
+            QuizzService.CATEGORY_COMPUTERS -> "Informatique"
+            QuizzService.CATEGORY_MATHEMATICS -> "Mathématiques"
+            QuizzService.CATEGORY_SPORTS -> "Sports"
+            QuizzService.CATEGORY_GEOGRAPHY -> "Géographie"
+            QuizzService.CATEGORY_HISTORY -> "Histoire"
+            QuizzService.CATEGORY_POLITICS -> "Politique"
+            QuizzService.CATEGORY_ART -> "Art"
+            QuizzService.CATEGORY_CELEBRITIES -> "Célébrités"
+            QuizzService.CATEGORY_ANIMALS -> "Animaux"
+            else -> "Catégorie Inconnue"
+        }
+    }
+
+    /**
+     * Translates common quiz text from English to French.
+     * This is a simple implementation that handles common words and phrases.
+     * In a real app, you would use a proper translation service.
+     */
+    fun translateText(text: String): String {
+        // Handle true/false answers
+        if (text.equals("True", ignoreCase = true)) return "Vrai"
+        if (text.equals("False", ignoreCase = true)) return "Faux"
+
+        // Simple dictionary for common words and phrases
+        val dictionary = mapOf(
+            "What" to "Quel",
+            "Who" to "Qui",
+            "When" to "Quand",
+            "Where" to "Où",
+            "Which" to "Quel",
+            "How" to "Comment",
+            "Why" to "Pourquoi",
+            "is" to "est",
+            "are" to "sont",
+            "was" to "était",
+            "were" to "étaient",
+            "the" to "le",
+            "a" to "un",
+            "an" to "un",
+            "in" to "dans",
+            "on" to "sur",
+            "at" to "à",
+            "of" to "de",
+            "and" to "et",
+            "or" to "ou",
+            "not" to "pas",
+            "yes" to "oui",
+            "no" to "non"
+        )
+
+        // This is a very basic translation approach
+        // In a real app, you would use a proper translation service API
+        var translatedText = text
+
+        // Apply simple word-by-word translation using the dictionary
+        for ((english, french) in dictionary) {
+            // Replace whole words only (with word boundaries)
+            translatedText = translatedText.replace("\\b$english\\b".toRegex(RegexOption.IGNORE_CASE), french)
+        }
+
+        return translatedText
+    }
+}

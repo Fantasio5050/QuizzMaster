@@ -1,0 +1,282 @@
+package com.example.quizzmaster.util
+
+import android.content.Context
+import android.text.Html
+import android.os.Build
+import android.util.Log
+import com.example.quizzmaster.model.Question
+import com.example.quizzmaster.service.QuizzService
+import com.google.mlkit.nl.translate.TranslateLanguage
+import com.google.mlkit.nl.translate.Translation
+import com.google.mlkit.nl.translate.TranslatorOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+
+/**
+ * Classe utilitaire pour traduire le contenu du quiz de l'anglais vers le français en utilisant ML Kit.
+ */
+object TranslationUtil {
+    private const val TAG = "TranslationUtil"
+    private var englishFrenchTranslator = initializeTranslator()
+
+    // Indique si le modèle de traduction est téléchargé et prêt
+    private var isTranslatorReady = false
+
+    /**
+     * Initialise le traducteur ML Kit de l'anglais vers le français.
+     */
+    private fun initializeTranslator() = Translation.getClient(
+        TranslatorOptions.Builder()
+            .setSourceLanguage(TranslateLanguage.ENGLISH)
+            .setTargetLanguage(TranslateLanguage.FRENCH)
+            .build()
+    )
+
+    /**
+     * Prépare le traducteur en téléchargeant le modèle si nécessaire.
+     * Doit être appelé au démarrage de l'application.
+     */
+    suspend fun prepareTranslator(context: Context): Boolean {
+        return try {
+            withContext(Dispatchers.IO) {
+                // Créer les conditions de téléchargement sans restriction wifi
+                val conditions = com.google.mlkit.common.model.DownloadConditions.Builder()
+                    // La ligne requireWifi() a été supprimée pour autoriser les données mobiles
+                    .build()
+
+                try {
+                    englishFrenchTranslator.downloadModelIfNeeded(conditions).await()
+                    isTranslatorReady = true
+                    Log.d(TAG, "Modèle de traduction téléchargé avec succès")
+                    true
+                } catch (e: Exception) {
+                    Log.e(TAG, "Erreur lors du téléchargement du modèle de traduction", e)
+                    // En cas d'échec, on revient à la traduction basique
+                    isTranslatorReady = false
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Erreur lors de la préparation du traducteur", e)
+            isTranslatorReady = false
+            false
+        }
+    }
+
+    /**
+     * Traduit une question de l'anglais vers le français.
+     *
+     * @param question La question à traduire
+     * @return Une nouvelle instance de Question avec le contenu traduit
+     */
+    suspend fun translateQuestion(question: Question): Question {
+        return Question(
+            category = translateCategory(question.category),
+            type = question.type,
+            difficulty = translateDifficulty(question.difficulty),
+            question = translateText(decodeHtml(question.question)),
+            correctAnswer = translateText(decodeHtml(question.correctAnswer)),
+            incorrectAnswers = question.incorrectAnswers.map { decodeHtml(it) }.map { translateText(it) }
+        )
+    }
+
+    /**
+     * Traduit une liste de questions de l'anglais vers le français.
+     *
+     * @param questions La liste des questions à traduire
+     * @return Une nouvelle liste de questions avec le contenu traduit
+     */
+    suspend fun translateQuestions(questions: List<Question>): List<Question> {
+        return questions.map { translateQuestion(it) }
+    }
+
+    /**
+     * Traduit le texte de l'anglais vers le français en utilisant ML Kit.
+     * Si le traducteur n'est pas prêt, utilise la méthode de traduction de secours.
+     *
+     * @param text Le texte à traduire
+     * @return Le texte traduit
+     */
+    private suspend fun translateText(text: String): String {
+        // Cas particuliers pour true/false
+        if (text.equals("True", ignoreCase = true)) return "Vrai"
+        if (text.equals("False", ignoreCase = true)) return "Faux"
+
+        return if (isTranslatorReady) {
+            try {
+                withContext(Dispatchers.IO) {
+                    englishFrenchTranslator.translate(text).await()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Erreur lors de la traduction avec ML Kit, utilisation de la méthode de secours", e)
+                fallbackTranslateText(text)
+            }
+        } else {
+            // Utiliser la méthode de secours si le traducteur n'est pas prêt
+            fallbackTranslateText(text)
+        }
+    }
+
+    /**
+     * Méthode de secours pour traduire le texte basée sur un dictionnaire simple.
+     * Utilisée si ML Kit n'est pas disponible.
+     */
+    private fun fallbackTranslateText(text: String): String {
+        // Simple dictionnaire pour les termes courants
+        val phrases = mapOf(
+            "What is" to "Qu'est-ce que",
+            "What are" to "Quels sont",
+            "Who is" to "Qui est",
+            "Who was" to "Qui était",
+            "When was" to "Quand était",
+            "Where is" to "Où est",
+            "Where was" to "Où était",
+            "Which of the following" to "Lequel des suivants",
+            "How many" to "Combien de"
+        )
+
+        val words = mapOf(
+            "What" to "Quel",
+            "Who" to "Qui",
+            "When" to "Quand",
+            "Where" to "Où",
+            "Which" to "Quel",
+            "How" to "Comment",
+            "Why" to "Pourquoi",
+            "is" to "est",
+            "are" to "sont",
+            "was" to "était",
+            "were" to "étaient",
+            "the" to "le",
+            "a" to "un",
+            "an" to "un",
+            "in" to "dans",
+            "on" to "sur",
+            "at" to "à",
+            "of" to "de",
+            "and" to "et",
+            "or" to "ou",
+            "not" to "pas",
+            "yes" to "oui",
+            "no" to "non"
+        )
+
+        var translatedText = text
+
+        for ((english, french) in phrases.entries.sortedByDescending { it.key.length }) {
+            val pattern = "\\b$english\\b"
+            translatedText = translatedText.replace(Regex(pattern, RegexOption.IGNORE_CASE)) { matchResult ->
+                val match = matchResult.value
+                if (match[0].isUpperCase()) {
+                    french.replaceFirstChar { it.uppercase() }
+                } else {
+                    french
+                }
+            }
+        }
+
+        for ((english, french) in words) {
+            val pattern = "\\b$english\\b"
+            translatedText = translatedText.replace(Regex(pattern, RegexOption.IGNORE_CASE)) { matchResult ->
+                val match = matchResult.value
+                if (match[0].isUpperCase()) {
+                    french.replaceFirstChar { it.uppercase() }
+                } else {
+                    french
+                }
+            }
+        }
+
+        return translatedText
+    }
+
+    /**
+     * Décode les entités HTML dans le texte.
+     * Nécessaire car l'API renvoie souvent du texte avec des entités HTML.
+     */
+    private fun decodeHtml(text: String): String {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            Html.fromHtml(text, Html.FROM_HTML_MODE_LEGACY).toString()
+        } else {
+            @Suppress("DEPRECATION")
+            Html.fromHtml(text).toString()
+        }
+    }
+
+    /**
+     * Traduit les noms de catégories de l'anglais vers le français.
+     */
+    fun translateCategory(category: String): String {
+        return when (category) {
+            "General Knowledge" -> "Culture Générale"
+            "Entertainment: Books" -> "Divertissement: Livres"
+            "Entertainment: Film" -> "Divertissement: Films"
+            "Entertainment: Music" -> "Divertissement: Musique"
+            "Entertainment: Television" -> "Divertissement: Télévision"
+            "Entertainment: Video Games" -> "Divertissement: Jeux Vidéo"
+            "Science & Nature" -> "Science & Nature"
+            "Science: Computers" -> "Science: Informatique"
+            "Science: Mathematics" -> "Science: Mathématiques"
+            "Sports" -> "Sports"
+            "Geography" -> "Géographie"
+            "History" -> "Histoire"
+            "Politics" -> "Politique"
+            "Art" -> "Art"
+            "Celebrities" -> "Célébrités"
+            "Animals" -> "Animaux"
+            else -> category
+        }
+    }
+
+    /**
+     * Traduit les niveaux de difficulté de l'anglais vers le français.
+     */
+    fun translateDifficulty(difficulty: String): String {
+        return when (difficulty.lowercase()) {
+            "easy" -> "facile"
+            "medium" -> "moyen"
+            "hard" -> "difficile"
+            else -> difficulty
+        }
+    }
+
+    /**
+     * Obtient le nom de catégorie en français à partir de l'ID de catégorie.
+     */
+    fun getCategoryNameFromId(categoryId: Int): String {
+        return when (categoryId) {
+            QuizzService.CATEGORY_GENERAL_KNOWLEDGE -> "Culture Générale"
+            QuizzService.CATEGORY_BOOKS -> "Livres"
+            QuizzService.CATEGORY_FILM -> "Films"
+            QuizzService.CATEGORY_MUSIC -> "Musique"
+            QuizzService.CATEGORY_TELEVISION -> "Télévision"
+            QuizzService.CATEGORY_VIDEO_GAMES -> "Jeux Vidéo"
+            QuizzService.CATEGORY_SCIENCE_NATURE -> "Science & Nature"
+            QuizzService.CATEGORY_COMPUTERS -> "Informatique"
+            QuizzService.CATEGORY_MATHEMATICS -> "Mathématiques"
+            QuizzService.CATEGORY_SPORTS -> "Sports"
+            QuizzService.CATEGORY_GEOGRAPHY -> "Géographie"
+            QuizzService.CATEGORY_HISTORY -> "Histoire"
+            QuizzService.CATEGORY_POLITICS -> "Politique"
+            QuizzService.CATEGORY_ART -> "Art"
+            QuizzService.CATEGORY_CELEBRITIES -> "Célébrités"
+            QuizzService.CATEGORY_ANIMALS -> "Animaux"
+            else -> "Catégorie Inconnue"
+        }
+    }
+
+    // Extension pour attendre les résultats dans une coroutine
+    private suspend inline fun <T> await(crossinline block: suspend () -> T): T {
+        return withContext(Dispatchers.IO) {
+            block()
+        }
+    }
+
+    /**
+     * Libère les ressources du traducteur quand l'application se ferme.
+     */
+    fun closeTranslator() {
+        englishFrenchTranslator.close()
+    }
+}
