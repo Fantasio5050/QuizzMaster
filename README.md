@@ -8,5 +8,3 @@ App Android Kotlin utilisant l'API https://opentdb.com/, Retrofit, Coroutines, e
 *   Retrofit 
 *   Jetpack Compose
 *   Android Studio
-
- sous licence [Nom de la licence]. Voir le fichier LICENSE pour plus de détails.
